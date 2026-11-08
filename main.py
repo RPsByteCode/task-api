@@ -122,9 +122,18 @@ async def create_task(request:Request):
             content={"error":"Title is required & must be a non-empty string"},
         )
     new_id = max((t["id"] for t in tasks), default=0) +1
-    task = {"id":new_id, "title":title.strip(), "done":False}
-    tasks.append(task)
-    return task
+
+    conn = get_db()
+    cursor = conn.execute(
+        "INSERT INTO tasks (title, done) VALUES (?,?)",
+        (title.strip(), 0),
+    )
+    conn.commit()
+    new_id = cursor.lastrowid
+    conn.close()
+    # task = {"id":new_id, "title":title.strip(), "done":False}
+    # tasks.append(task)
+    return {"id":new_id, "title":title.strip(), "done": False}
 
 
 @app.put(
