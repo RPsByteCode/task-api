@@ -42,16 +42,16 @@ def row_to_task(row):
 app = FastAPI(
     title="Task API",
     version="1.0",
-    description="A Small In-Memory To-Do list API with Full CRUD.",
+    description="A small to-do list API with full CRUD, backed by SQLite.",
 )
 
-# In-memory Database
-tasks = [
-    {"id":1, "title":"Learn HTTP", "done":True},
-    {"id":2, "title":"Build a CRUD API", "done":False},
-    {"id":3, "title":"Publish to GitHub", "done":False},
+# # In-memory Database
+# tasks = [
+#     {"id":1, "title":"Learn HTTP", "done":True},
+#     {"id":2, "title":"Build a CRUD API", "done":False},
+#     {"id":3, "title":"Publish to GitHub", "done":False},
 
-]
+# ]
 
 @app.get("/", summary="API info")
 def root():
@@ -121,7 +121,7 @@ async def create_task(request:Request):
             status_code=400,
             content={"error":"Title is required & must be a non-empty string"},
         )
-    new_id = max((t["id"] for t in tasks), default=0) +1
+    # new_id = max((t["id"] for t in tasks), default=0) +1
 
     conn = get_db()
     cursor = conn.execute(
@@ -159,8 +159,11 @@ async def create_task(request:Request):
     },
 )
 async def update_task(task_id:int, request: Request):
-    task = next((t for t in tasks if t["id"]== task_id), None)
-    if task is None:
+    conn = get_db()
+    row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    conn.close()
+    
+    if row is None:
         return JSONResponse(
             status_code= 404,
             content= {"error": f"Task {task_id} not found"}
@@ -190,20 +193,30 @@ async def update_task(task_id:int, request: Request):
             content={"error": "Done must be true/false"}
         )
 
-    if "title" in body:
-        task["title"] = body["title"].strip()
-    if "done" in body:
-        task["done"] = body["done"]
-    return task
+    new_title = body["title"].strip() if "title" in body else row["title"]
+    new_done = int(body["done"]) if "done" in body else row["done"]
+
+    conn = get_db()
+    conn.execute(
+        "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
+        (new_title, new_done, task_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"id": task_id, "title": new_title, "done": bool(new_done)}
 
 @app.delete("/tasks/{task_id}", status_code=204, summary="Delete a task",
             description="Removes the task. Returns 204 with no body, or 404 for an unknown id.")
-def delete_task(task_id:int):
-    for index,task in enumerate(tasks):
-        if task["id"]== task_id :
-            tasks.pop(index)
-            return Response(status_code=204)
-    return JSONResponse(
-        status_code=404,
-        content={"error":f"Task {task_id} not found"}
-    )
+def delete_task(task_id: int):
+    conn = get_db()
+    cursor = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    conn.commit()
+    deleted = cursor.rowcount
+    conn.close()
+    if deleted == 0:
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Task {task_id} not found"},
+        )
+    return Response(status_code=204)
+
